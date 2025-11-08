@@ -21,7 +21,15 @@ SECRET_KEY = config('SECRET_KEY', default='django-insecure-dev-key-change-in-pro
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = config('DEBUG', default=True, cast=bool)
 
-ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='localhost,127.0.0.1', cast=Csv())
+# ALLOWED_HOSTS configuration
+# For Railway: Add your Railway domain or use environment variable
+# Railway provides RAILWAY_PUBLIC_DOMAIN or you can set ALLOWED_HOSTS env var
+default_hosts = 'localhost,127.0.0.1'
+railway_domain = os.getenv('RAILWAY_PUBLIC_DOMAIN')
+if railway_domain:
+    default_hosts = f'{default_hosts},{railway_domain}'
+
+ALLOWED_HOSTS = config('ALLOWED_HOSTS', default=default_hosts, cast=Csv())
 
 
 # Application definition
