@@ -22,14 +22,25 @@ SECRET_KEY = config('SECRET_KEY', default='django-insecure-dev-key-change-in-pro
 DEBUG = config('DEBUG', default=True, cast=bool)
 
 # ALLOWED_HOSTS configuration
-# For Railway: Add your Railway domain or use environment variable
-# Railway provides RAILWAY_PUBLIC_DOMAIN or you can set ALLOWED_HOSTS env var
-default_hosts = 'localhost,127.0.0.1'
+# For Railway: Automatically includes Railway domains
+default_hosts = ['localhost', '127.0.0.1']
+
+# Check for Railway environment variables
 railway_domain = os.getenv('RAILWAY_PUBLIC_DOMAIN')
 if railway_domain:
-    default_hosts = f'{default_hosts},{railway_domain}'
+    default_hosts.append(railway_domain)
 
-ALLOWED_HOSTS = config('ALLOWED_HOSTS', default=default_hosts, cast=Csv())
+# Also check for Railway's service domain pattern
+railway_service_domain = os.getenv('RAILWAY_SERVICE_DOMAIN')
+if railway_service_domain:
+    default_hosts.append(railway_service_domain)
+
+# Add your specific Railway domain (update if it changes)
+default_hosts.append('web-production-725a.up.railway.app')
+
+# If ALLOWED_HOSTS is explicitly set via environment variable, use it
+# Otherwise, use the defaults we've configured
+ALLOWED_HOSTS = config('ALLOWED_HOSTS', default=','.join(default_hosts), cast=Csv())
 
 
 # Application definition
