@@ -20,7 +20,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = config('SECRET_KEY', default='django-insecure-dev-key-change-in-production')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = config('DEBUG', default=True, cast=bool)
+# On Railway, DEBUG should be False for production
+DEBUG = config('DEBUG', default=not bool(os.getenv('RAILWAY_ENVIRONMENT')), cast=bool)
 
 # ALLOWED_HOSTS configuration
 # For Railway: Automatically includes Railway domains
@@ -104,10 +105,6 @@ else:
     # Session backend using database (Phase 1)
     SESSION_ENGINE = 'django.contrib.sessions.backends.db'
 
-# Media files (for user uploads like post images)
-MEDIA_URL = '/media/'
-MEDIA_ROOT = BASE_DIR / 'media'
-
 # Celery Configuration
 CELERY_BROKER_URL = config('CELERY_BROKER_URL', default='redis://127.0.0.1:6379/0')
 CELERY_RESULT_BACKEND = config('CELERY_RESULT_BACKEND', default='redis://127.0.0.1:6379/0')
@@ -163,23 +160,25 @@ TEMPLATES = [
 WSGI_APPLICATION = 'vinverse.wsgi.application'
 
 
-# Database Configuration for Supabase (Authentication)
-# Priority: SUPABASE_DB_URL > DATABASE_URL > Supabase individual settings > SQLite fallback
+# Database Configuration for Supabase (REQUIRED - No SQLite fallback)
+# Priority: SUPABASE_DB_URL > DATABASE_URL > Supabase individual settings
 # 
 # To get your Supabase database connection string:
 # 1. Go to https://pzvqevdqywmbmgpfamcz.supabase.co
 # 2. Navigate to Settings → Database
 # 3. Find "Connection string" section
 # 4. Copy the "URI" connection string (it looks like: postgresql://postgres:[YOUR-PASSWORD]@db.pzvqevdqywmbmgpfamcz.supabase.co:5432/postgres)
-# 5. Set it as SUPABASE_DB_URL environment variable on Railway
+# 5. Set it as SUPABASE_DB_URL environment variable in your .env file
 #
-# Or use individual settings:
+# Or use individual settings in .env file:
 # SUPABASE_DB_HOST=db.pzvqevdqywmbmgpfamcz.supabase.co
 # SUPABASE_DB_PASSWORD=[YOUR-DATABASE-PASSWORD]
-# (User: postgres, Database: postgres, Port: 5432)
+# SUPABASE_DB_USER=postgres
+# SUPABASE_DB_NAME=postgres
+# SUPABASE_DB_PORT=5432
 
-SUPABASE_DB_URL = os.getenv('SUPABASE_DB_URL') or os.getenv('SUPABASE_DATABASE_URL')
-DATABASE_URL = os.getenv('DATABASE_URL') or os.getenv('POSTGRES_URL')
+SUPABASE_DB_URL = config('SUPABASE_DB_URL', default=None) or config('SUPABASE_DATABASE_URL', default=None)
+DATABASE_URL = config('DATABASE_URL', default=None) or config('POSTGRES_URL', default=None)
 
 DATABASES = None
 
@@ -193,12 +192,16 @@ if SUPABASE_DB_URL:
                 conn_health_checks=True,
             )
         }
-        print(f"Using Supabase DATABASE_URL for authentication")
+        # Ensure SSL is required for Supabase
+        if 'OPTIONS' not in DATABASES['default']:
+            DATABASES['default']['OPTIONS'] = {}
+        DATABASES['default']['OPTIONS']['sslmode'] = 'require'
+        print(f"✅ Using Supabase DATABASE_URL for database connection")
     except Exception as e:
-        print(f"Warning: Failed to parse Supabase DATABASE_URL: {e}")
-        DATABASES = None
+        print(f"❌ Error: Failed to parse Supabase DATABASE_URL: {e}")
+        raise ValueError(f"Invalid Supabase DATABASE_URL configuration: {e}")
 
-# If Supabase URL not set, try generic DATABASE_URL
+# If Supabase URL not set, try generic DATABASE_URL (for Supabase connection string)
 if not DATABASES and DATABASE_URL:
     try:
         DATABASES = {
@@ -208,28 +211,24 @@ if not DATABASES and DATABASE_URL:
                 conn_health_checks=True,
             )
         }
-        print(f"Using DATABASE_URL for database connection")
+        # Ensure SSL is required for Supabase
+        if 'OPTIONS' not in DATABASES['default']:
+            DATABASES['default']['OPTIONS'] = {}
+        DATABASES['default']['OPTIONS']['sslmode'] = 'require'
+        print(f"✅ Using DATABASE_URL for Supabase connection")
     except Exception as e:
-        print(f"Warning: Failed to parse DATABASE_URL: {e}")
-        DATABASES = None
+        print(f"❌ Error: Failed to parse DATABASE_URL: {e}")
+        raise ValueError(f"Invalid DATABASE_URL configuration: {e}")
 
 # If URL not set, try Supabase individual connection settings
 if not DATABASES:
     # Supabase provides these environment variables
     # Your project host: db.pzvqevdqywmbmgpfamcz.supabase.co
-    supabase_host = os.getenv('SUPABASE_DB_HOST') or os.getenv('SUPABASE_HOST')
-    supabase_port = os.getenv('SUPABASE_DB_PORT') or os.getenv('SUPABASE_PORT', '5432')
-    supabase_user = os.getenv('SUPABASE_DB_USER') or os.getenv('SUPABASE_USER') or 'postgres'
-    supabase_password = os.getenv('SUPABASE_DB_PASSWORD') or os.getenv('SUPABASE_PASSWORD')
-    supabase_database = os.getenv('SUPABASE_DB_NAME') or os.getenv('SUPABASE_DATABASE') or 'postgres'
-    
-    # Also check for Railway PostgreSQL variables (as fallback)
-    if not supabase_host:
-        supabase_host = os.getenv('PGHOST')
-        supabase_port = os.getenv('PGPORT') or '5432'
-        supabase_user = os.getenv('PGUSER') or 'postgres'
-        supabase_password = os.getenv('PGPASSWORD')
-        supabase_database = os.getenv('PGDATABASE') or 'postgres'
+    supabase_host = config('SUPABASE_DB_HOST', default=None) or config('SUPABASE_HOST', default=None)
+    supabase_port = config('SUPABASE_DB_PORT', default='5432') or config('SUPABASE_PORT', default='5432')
+    supabase_user = config('SUPABASE_DB_USER', default='postgres') or config('SUPABASE_USER', default='postgres')
+    supabase_password = config('SUPABASE_DB_PASSWORD', default=None) or config('SUPABASE_PASSWORD', default=None)
+    supabase_database = config('SUPABASE_DB_NAME', default='postgres') or config('SUPABASE_DATABASE', default='postgres')
     
     # Only use PostgreSQL if we have ALL required credentials
     if supabase_host and supabase_user and supabase_password and supabase_database:
@@ -247,17 +246,37 @@ if not DATABASES:
                 },
             }
         }
-        print(f"Using Supabase PostgreSQL with host: {supabase_host}")
+        print(f"✅ Using Supabase PostgreSQL with host: {supabase_host}")
     else:
-        # Fallback to SQLite if PostgreSQL credentials are missing
-        print("Warning: Supabase/PostgreSQL credentials not found. Falling back to SQLite.")
-        DATABASES = {
-            'default': {
-                'ENGINE': 'django.db.backends.sqlite3',
-                'NAME': BASE_DIR / 'db.sqlite3',
-            }
-        }
-        print("Using SQLite database (authentication will use SQLite)")
+        # CRITICAL: Raise error if Supabase credentials are missing
+        missing_vars = []
+        if not supabase_host:
+            missing_vars.append('SUPABASE_DB_HOST')
+        if not supabase_password:
+            missing_vars.append('SUPABASE_DB_PASSWORD')
+        
+        error_msg = f"""
+❌ ERROR: Supabase database credentials are required but not configured!
+
+Please set one of the following in your .env file:
+
+Option 1 (Recommended - Connection String):
+  SUPABASE_DB_URL=postgresql://postgres:[YOUR-PASSWORD]@db.pzvqevdqywmbmgpfamcz.supabase.co:5432/postgres
+
+Option 2 (Individual Settings):
+  SUPABASE_DB_HOST=db.pzvqevdqywmbmgpfamcz.supabase.co
+  SUPABASE_DB_PASSWORD=[YOUR-DATABASE-PASSWORD]
+  SUPABASE_DB_USER=postgres
+  SUPABASE_DB_NAME=postgres
+  SUPABASE_DB_PORT=5432
+
+Missing variables: {', '.join(missing_vars) if missing_vars else 'None (check all variables)'}
+
+Get your Supabase connection string from:
+https://pzvqevdqywmbmgpfamcz.supabase.co → Settings → Database → Connection string
+        """
+        print(error_msg)
+        raise ValueError("Supabase database configuration is required. Please set SUPABASE_DB_URL or SUPABASE_DB_* environment variables.")
 
 
 # Custom User Model
@@ -298,7 +317,12 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/4.2/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+
+# Media files
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field
@@ -336,8 +360,15 @@ CORS_ALLOWED_ORIGINS = [
 
 # For production - allow Netlify and Railway domains
 # Check if we're in production (Railway sets RAILWAY_ENVIRONMENT)
-if os.getenv('RAILWAY_ENVIRONMENT') or os.getenv('RAILWAY_DEPLOYMENT_ID'):
-    # Add specific Railway domain
+is_production = bool(os.getenv('RAILWAY_ENVIRONMENT') or os.getenv('RAILWAY_DEPLOYMENT_ID'))
+
+if is_production:
+    # Get Railway public domain dynamically
+    railway_domain = os.getenv('RAILWAY_PUBLIC_DOMAIN')
+    if railway_domain:
+        CORS_ALLOWED_ORIGINS.append(f"https://{railway_domain}")
+    
+    # Add specific Railway domain (fallback)
     CORS_ALLOWED_ORIGINS.append("https://web-production-725a.up.railway.app")
     
     # Add Netlify domains (production and preview deployments)
