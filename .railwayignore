@@ -1,0 +1,53 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+*.egg-info/
+dist/
+build/
+
+# Django
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+/media
+/staticfiles
+
+# Redis
+dump.rdb
+*.rdb
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# OS
+Thumbs.db
+
+# Documentation (optional - remove if you want to include them)
+*.md
+*.txt
+!requirements.txt
+!runtime.txt
+!Procfile
+
+# Scripts (optional - remove if you need them)
+setup_database.sh
+start_postgres.sh
+setup_database.sql
+
