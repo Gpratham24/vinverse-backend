@@ -7,6 +7,7 @@ from datetime import timedelta
 from decouple import config, Csv
 import dj_database_url
 import os
+import re
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -333,14 +334,24 @@ CORS_ALLOWED_ORIGINS = [
     "http://127.0.0.1:5173",
 ]
 
-# For production on Railway - allow Railway domains
+# For production - allow Netlify and Railway domains
 # Check if we're in production (Railway sets RAILWAY_ENVIRONMENT)
 if os.getenv('RAILWAY_ENVIRONMENT') or os.getenv('RAILWAY_DEPLOYMENT_ID'):
     # Add specific Railway domain
     CORS_ALLOWED_ORIGINS.append("https://web-production-725a.up.railway.app")
-    # For Railway, you can also allow all origins (less secure but flexible)
-    # Uncomment the line below if you need to allow requests from any origin
-    # CORS_ALLOW_ALL_ORIGINS = True
+    
+    # Add Netlify domains (production and preview deployments)
+    CORS_ALLOWED_ORIGINS.extend([
+        "https://vinverse-esport.netlify.app",  # Production Netlify domain
+        "https://690ef678e882c47e86fac13e--vinverse-esport.netlify.app",  # Current preview
+    ])
+    
+    # Allow all Netlify preview deployments using regex pattern
+    # Netlify preview URLs follow pattern: https://[hash]--[site-name].netlify.app
+    CORS_ALLOWED_ORIGIN_REGEXES = [
+        r"^https://.*--vinverse-esport\.netlify\.app$",  # Preview deployments
+        r"^https://vinverse-esport\.netlify\.app$",  # Production
+    ]
 
 CORS_ALLOW_CREDENTIALS = True
 
