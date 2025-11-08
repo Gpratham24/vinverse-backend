@@ -164,35 +164,61 @@ WSGI_APPLICATION = 'vinverse.wsgi.application'
 
 # Database Configuration
 # Priority: DATABASE_URL (Railway/Production) > Individual DB settings > SQLite fallback
-DATABASE_URL = os.getenv('DATABASE_URL')
+DATABASE_URL = os.getenv('DATABASE_URL') or os.getenv('POSTGRES_URL') or os.getenv('PGDATABASE')
+
+DATABASES = None
 
 if DATABASE_URL:
     # Use dj_database_url for Railway/Heroku-style DATABASE_URL
-    DATABASES = {
-        'default': dj_database_url.config(
-            default=DATABASE_URL,
-            conn_max_age=600,
-            conn_health_checks=True,
-        )
-    }
-else:
-    # Fallback to individual environment variables or SQLite
+    try:
+        DATABASES = {
+            'default': dj_database_url.config(
+                default=DATABASE_URL,
+                conn_max_age=600,
+                conn_health_checks=True,
+            )
+        }
+    except Exception as e:
+        # If DATABASE_URL parsing fails, fall through to other options
+        print(f"Warning: Failed to parse DATABASE_URL: {e}")
+        DATABASES = None
+
+# If DATABASE_URL wasn't set or failed, try individual settings
+if not DATABASES:
     DATABASE_ENGINE = config('DATABASE_ENGINE', default='postgresql')
     
     if DATABASE_ENGINE == 'postgresql':
-        DATABASES = {
-            'default': {
-                'ENGINE': 'django.db.backends.postgresql',
-                'NAME': config('DB_NAME', default='vinverse_db'),
-                'USER': config('DB_USER', default='postgres'),
-                'PASSWORD': config('DB_PASSWORD', default='postgres'),
-                'HOST': config('DB_HOST', default='localhost'),
-                'PORT': config('DB_PORT', default='5432'),
-                'OPTIONS': {
-                    'connect_timeout': 10,
-                },
+        # Check if we're on Railway (Railway provides PGHOST, PGPORT, etc.)
+        pg_host = os.getenv('PGHOST') or config('DB_HOST', default=None)
+        pg_port = os.getenv('PGPORT') or config('DB_PORT', default=None)
+        pg_user = os.getenv('PGUSER') or config('DB_USER', default=None)
+        pg_password = os.getenv('PGPASSWORD') or config('DB_PASSWORD', default=None)
+        pg_database = os.getenv('PGDATABASE') or config('DB_NAME', default=None)
+        
+        # Only use PostgreSQL if we have proper credentials
+        if pg_host and pg_user and pg_password and pg_database:
+            DATABASES = {
+                'default': {
+                    'ENGINE': 'django.db.backends.postgresql',
+                    'NAME': pg_database,
+                    'USER': pg_user,
+                    'PASSWORD': pg_password,
+                    'HOST': pg_host,
+                    'PORT': pg_port or '5432',
+                    'OPTIONS': {
+                        'connect_timeout': 10,
+                    },
+                }
             }
-        }
+        else:
+            # Fallback to SQLite if PostgreSQL credentials are missing
+            print("Warning: PostgreSQL credentials not found. Falling back to SQLite.")
+            DATABASES = {
+                'default': {
+                    'ENGINE': 'django.db.backends.sqlite3',
+                    'NAME': BASE_DIR / 'db.sqlite3',
+                }
+            }
     else:
         # Fallback to SQLite for development
         DATABASES = {
@@ -271,10 +297,33 @@ SIMPLE_JWT = {
 }
 
 # CORS Settings - Allow React frontend to access API
+# For development
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",  # Vite default port
     "http://127.0.0.1:5173",
 ]
 
+# For production on Railway - allow Railway domains
+# Check if we're in production (Railway sets RAILWAY_ENVIRONMENT)
+if os.getenv('RAILWAY_ENVIRONMENT') or os.getenv('RAILWAY_DEPLOYMENT_ID'):
+    # Add specific Railway domain
+    CORS_ALLOWED_ORIGINS.append("https://web-production-725a.up.railway.app")
+    # For Railway, you can also allow all origins (less secure but flexible)
+    # Uncomment the line below if you need to allow requests from any origin
+    # CORS_ALLOW_ALL_ORIGINS = True
+
 CORS_ALLOW_CREDENTIALS = True
+
+# Allow common headers
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+]
 

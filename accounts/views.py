@@ -45,42 +45,60 @@ def login_user(request):
     Endpoint: POST /api/auth/login/
     Body: { "email": "...", "password": "..." }
     """
-    email = request.data.get('email')
-    password = request.data.get('password')
-    
-    if not email or not password:
-        return Response(
-            {'error': 'Email and password are required'},
-            status=status.HTTP_400_BAD_REQUEST
-        )
-    
-    # Try to find user by email
     try:
-        user = CustomUser.objects.get(email=email)
-    except CustomUser.DoesNotExist:
+        email = request.data.get('email')
+        password = request.data.get('password')
+        
+        if not email or not password:
+            return Response(
+                {'error': 'Email and password are required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Try to find user by email
+        try:
+            user = CustomUser.objects.get(email=email)
+        except CustomUser.DoesNotExist:
+            return Response(
+                {'error': 'Account does not exist. Please sign up first.'},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+        except Exception as e:
+            return Response(
+                {'error': f'Database error: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+        
+        # Authenticate with username (Django's authenticate uses username)
+        user = authenticate(username=user.username, password=password)
+        
+        if user:
+            try:
+                refresh = RefreshToken.for_user(user)
+                serializer = UserProfileSerializer(user)
+                return Response({
+                    'user': serializer.data,
+                    'tokens': {
+                        'refresh': str(refresh),
+                        'access': str(refresh.access_token),
+                    },
+                    'message': 'Login successful'
+                }, status=status.HTTP_200_OK)
+            except Exception as e:
+                return Response(
+                    {'error': f'Token generation error: {str(e)}'},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                )
+        
         return Response(
-            {'error': 'Account does not exist. Please sign up first.'},
+            {'error': 'Invalid password. Please try again.'},
             status=status.HTTP_401_UNAUTHORIZED
         )
-    
-    # Authenticate with username (Django's authenticate uses username)
-    user = authenticate(username=user.username, password=password)
-    
-    if user:
-        refresh = RefreshToken.for_user(user)
-        return Response({
-            'user': UserProfileSerializer(user).data,
-            'tokens': {
-                'refresh': str(refresh),
-                'access': str(refresh.access_token),
-            },
-            'message': 'Login successful'
-        }, status=status.HTTP_200_OK)
-    
-    return Response(
-        {'error': 'Invalid password. Please try again.'},
-        status=status.HTTP_401_UNAUTHORIZED
-    )
+    except Exception as e:
+        return Response(
+            {'error': f'Login error: {str(e)}'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
 
 
 @api_view(['GET'])
