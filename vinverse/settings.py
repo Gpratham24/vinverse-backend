@@ -38,9 +38,15 @@ if railway_service_domain:
 # Add your specific Railway domain (update if it changes)
 default_hosts.append('web-production-725a.up.railway.app')
 
-# If ALLOWED_HOSTS is explicitly set via environment variable, use it
-# Otherwise, use the defaults we've configured
-ALLOWED_HOSTS = config('ALLOWED_HOSTS', default=','.join(default_hosts), cast=Csv())
+# If ALLOWED_HOSTS is explicitly set via environment variable, merge it with defaults
+# This ensures Railway domain is always included even if env var is set
+allowed_hosts_env = os.getenv('ALLOWED_HOSTS')
+if allowed_hosts_env:
+    env_hosts = config('ALLOWED_HOSTS', cast=Csv())
+    # Merge environment hosts with defaults, avoiding duplicates
+    ALLOWED_HOSTS = list(set(default_hosts + list(env_hosts)))
+else:
+    ALLOWED_HOSTS = default_hosts
 
 
 # Application definition
