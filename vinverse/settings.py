@@ -162,14 +162,43 @@ TEMPLATES = [
 WSGI_APPLICATION = 'vinverse.wsgi.application'
 
 
-# Database Configuration
-# Priority: DATABASE_URL (Railway/Production) > Individual DB settings > SQLite fallback
-DATABASE_URL = os.getenv('DATABASE_URL') or os.getenv('POSTGRES_URL') or os.getenv('PGDATABASE')
+# Database Configuration for Supabase (Authentication)
+# Priority: SUPABASE_DB_URL > DATABASE_URL > Supabase individual settings > SQLite fallback
+# 
+# To get your Supabase database connection string:
+# 1. Go to https://pzvqevdqywmbmgpfamcz.supabase.co
+# 2. Navigate to Settings → Database
+# 3. Find "Connection string" section
+# 4. Copy the "URI" connection string (it looks like: postgresql://postgres:[YOUR-PASSWORD]@db.pzvqevdqywmbmgpfamcz.supabase.co:5432/postgres)
+# 5. Set it as SUPABASE_DB_URL environment variable on Railway
+#
+# Or use individual settings:
+# SUPABASE_DB_HOST=db.pzvqevdqywmbmgpfamcz.supabase.co
+# SUPABASE_DB_PASSWORD=[YOUR-DATABASE-PASSWORD]
+# (User: postgres, Database: postgres, Port: 5432)
+
+SUPABASE_DB_URL = os.getenv('SUPABASE_DB_URL') or os.getenv('SUPABASE_DATABASE_URL')
+DATABASE_URL = os.getenv('DATABASE_URL') or os.getenv('POSTGRES_URL')
 
 DATABASES = None
 
-if DATABASE_URL:
-    # Use dj_database_url for Railway/Heroku-style DATABASE_URL
+# First, try Supabase connection URL
+if SUPABASE_DB_URL:
+    try:
+        DATABASES = {
+            'default': dj_database_url.config(
+                default=SUPABASE_DB_URL,
+                conn_max_age=600,
+                conn_health_checks=True,
+            )
+        }
+        print(f"Using Supabase DATABASE_URL for authentication")
+    except Exception as e:
+        print(f"Warning: Failed to parse Supabase DATABASE_URL: {e}")
+        DATABASES = None
+
+# If Supabase URL not set, try generic DATABASE_URL
+if not DATABASES and DATABASE_URL:
     try:
         DATABASES = {
             'default': dj_database_url.config(
@@ -178,55 +207,56 @@ if DATABASE_URL:
                 conn_health_checks=True,
             )
         }
+        print(f"Using DATABASE_URL for database connection")
     except Exception as e:
-        # If DATABASE_URL parsing fails, fall through to other options
         print(f"Warning: Failed to parse DATABASE_URL: {e}")
         DATABASES = None
 
-# If DATABASE_URL wasn't set or failed, try individual settings
+# If URL not set, try Supabase individual connection settings
 if not DATABASES:
-    DATABASE_ENGINE = config('DATABASE_ENGINE', default='postgresql')
+    # Supabase provides these environment variables
+    # Your project host: db.pzvqevdqywmbmgpfamcz.supabase.co
+    supabase_host = os.getenv('SUPABASE_DB_HOST') or os.getenv('SUPABASE_HOST')
+    supabase_port = os.getenv('SUPABASE_DB_PORT') or os.getenv('SUPABASE_PORT', '5432')
+    supabase_user = os.getenv('SUPABASE_DB_USER') or os.getenv('SUPABASE_USER') or 'postgres'
+    supabase_password = os.getenv('SUPABASE_DB_PASSWORD') or os.getenv('SUPABASE_PASSWORD')
+    supabase_database = os.getenv('SUPABASE_DB_NAME') or os.getenv('SUPABASE_DATABASE') or 'postgres'
     
-    if DATABASE_ENGINE == 'postgresql':
-        # Check if we're on Railway (Railway provides PGHOST, PGPORT, etc.)
-        pg_host = os.getenv('PGHOST') or config('DB_HOST', default=None)
-        pg_port = os.getenv('PGPORT') or config('DB_PORT', default=None)
-        pg_user = os.getenv('PGUSER') or config('DB_USER', default=None)
-        pg_password = os.getenv('PGPASSWORD') or config('DB_PASSWORD', default=None)
-        pg_database = os.getenv('PGDATABASE') or config('DB_NAME', default=None)
-        
-        # Only use PostgreSQL if we have proper credentials
-        if pg_host and pg_user and pg_password and pg_database:
-            DATABASES = {
-                'default': {
-                    'ENGINE': 'django.db.backends.postgresql',
-                    'NAME': pg_database,
-                    'USER': pg_user,
-                    'PASSWORD': pg_password,
-                    'HOST': pg_host,
-                    'PORT': pg_port or '5432',
-                    'OPTIONS': {
-                        'connect_timeout': 10,
-                    },
-                }
+    # Also check for Railway PostgreSQL variables (as fallback)
+    if not supabase_host:
+        supabase_host = os.getenv('PGHOST')
+        supabase_port = os.getenv('PGPORT') or '5432'
+        supabase_user = os.getenv('PGUSER') or 'postgres'
+        supabase_password = os.getenv('PGPASSWORD')
+        supabase_database = os.getenv('PGDATABASE') or 'postgres'
+    
+    # Only use PostgreSQL if we have ALL required credentials
+    if supabase_host and supabase_user and supabase_password and supabase_database:
+        DATABASES = {
+            'default': {
+                'ENGINE': 'django.db.backends.postgresql',
+                'NAME': supabase_database,
+                'USER': supabase_user,
+                'PASSWORD': supabase_password,
+                'HOST': supabase_host,
+                'PORT': supabase_port,
+                'OPTIONS': {
+                    'connect_timeout': 10,
+                    'sslmode': 'require',  # Supabase requires SSL
+                },
             }
-        else:
-            # Fallback to SQLite if PostgreSQL credentials are missing
-            print("Warning: PostgreSQL credentials not found. Falling back to SQLite.")
-            DATABASES = {
-                'default': {
-                    'ENGINE': 'django.db.backends.sqlite3',
-                    'NAME': BASE_DIR / 'db.sqlite3',
-                }
-            }
+        }
+        print(f"Using Supabase PostgreSQL with host: {supabase_host}")
     else:
-        # Fallback to SQLite for development
+        # Fallback to SQLite if PostgreSQL credentials are missing
+        print("Warning: Supabase/PostgreSQL credentials not found. Falling back to SQLite.")
         DATABASES = {
             'default': {
                 'ENGINE': 'django.db.backends.sqlite3',
                 'NAME': BASE_DIR / 'db.sqlite3',
             }
         }
+        print("Using SQLite database (authentication will use SQLite)")
 
 
 # Custom User Model
