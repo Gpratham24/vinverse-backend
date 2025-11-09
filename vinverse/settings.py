@@ -38,7 +38,7 @@ if railway_service_domain:
     default_hosts.append(railway_service_domain)
 
 # Add your specific Railway domain (update if it changes)
-default_hosts.append('web-production-725a.up.railway.app')
+default_hosts.append('vinverse-backend.up.railway.app')
 
 # If ALLOWED_HOSTS is explicitly set via environment variable, merge it with defaults
 # This ensures Railway domain is always included even if env var is set
@@ -380,7 +380,7 @@ if is_production:
         CORS_ALLOWED_ORIGINS.append(f"https://{railway_domain}")
     
     # Add specific Railway domain (fallback)
-    CORS_ALLOWED_ORIGINS.append("https://web-production-725a.up.railway.app")
+    CORS_ALLOWED_ORIGINS.append("https://vinverse-backend.up.railway.app")
     
     # Add Netlify domains (production and preview deployments)
     CORS_ALLOWED_ORIGINS.extend([
