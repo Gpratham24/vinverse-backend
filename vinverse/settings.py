@@ -384,15 +384,17 @@ if is_production:
     
     # Add Netlify domains (production and preview deployments)
     CORS_ALLOWED_ORIGINS.extend([
-        "https://vinverse-esport.netlify.app",  # Production Netlify domain
-        "https://690ef678e882c47e86fac13e--vinverse-esport.netlify.app",  # Current preview
+        "https://vinesports.netlify.app",
+        "localhost:5173# Production Netlify domain  # Alternative domain
     ])
     
     # Allow all Netlify preview deployments using regex pattern
     # Netlify preview URLs follow pattern: https://[hash]--[site-name].netlify.app
     CORS_ALLOWED_ORIGIN_REGEXES = [
-        r"^https://.*--vinverse-esport\.netlify\.app$",  # Preview deployments
-        r"^https://vinverse-esport\.netlify\.app$",  # Production
+        r"^https://.*--vinesports\.netlify\.app$",  # Preview deployments for vinesports
+        r"^https://vinesports\.netlify\.app$",  # Production vinesports
+        r"^https://.*--vinverse-esport\.netlify\.app$",  # Preview deployments for vinverse-esport
+        r"^https://vinverse-esport\.netlify\.app$",  # Production vinverse-esport
     ]
 
 CORS_ALLOW_CREDENTIALS = True
