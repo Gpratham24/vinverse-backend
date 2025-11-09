@@ -123,14 +123,14 @@ ASGI_APPLICATION = 'vinverse.asgi.application'
 try:
     import redis
     redis.Redis(host='127.0.0.1', port=6379, db=0).ping()
-CHANNEL_LAYERS = {
-    'default': {
-        'BACKEND': 'channels_redis.core.RedisChannelLayer',
-        'CONFIG': {
-            "hosts": [('127.0.0.1', 6379)],
+    CHANNEL_LAYERS = {
+        'default': {
+            'BACKEND': 'channels_redis.core.RedisChannelLayer',
+            'CONFIG': {
+                "hosts": [('127.0.0.1', 6379)],
+            },
         },
-    },
-}
+    }
 except (ImportError, redis.ConnectionError, Exception):
     # Fallback to in-memory channel layer (for development only)
     CHANNEL_LAYERS = {
