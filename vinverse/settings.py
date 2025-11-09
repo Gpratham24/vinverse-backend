@@ -123,14 +123,14 @@ ASGI_APPLICATION = 'vinverse.asgi.application'
 try:
     import redis
     redis.Redis(host='127.0.0.1', port=6379, db=0).ping()
-    CHANNEL_LAYERS = {
-        'default': {
-            'BACKEND': 'channels_redis.core.RedisChannelLayer',
-            'CONFIG': {
-                "hosts": [('127.0.0.1', 6379)],
-            },
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {
+            "hosts": [('127.0.0.1', 6379)],
         },
-    }
+    },
+}
 except (ImportError, redis.ConnectionError, Exception):
     # Fallback to in-memory channel layer (for development only)
     CHANNEL_LAYERS = {
@@ -384,8 +384,8 @@ if is_production:
     
     # Add Netlify domains (production and preview deployments)
     CORS_ALLOWED_ORIGINS.extend([
-        "https://vinesports.netlify.app",
-        "localhost:5173# Production Netlify domain  # Alternative domain
+        "https://vinesports.netlify.app",  # Production Netlify domain
+        "https://vinverse-esport.netlify.app",  # Alternative domain
     ])
     
     # Allow all Netlify preview deployments using regex pattern

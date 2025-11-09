@@ -1,1 +1,1 @@
-web: gunicorn vinverse.wsgi --bind 0.0.0.0:$PORT
+web: daphne -b 0.0.0.0 -p $PORT vinverse.asgi:application
