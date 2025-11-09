@@ -17,14 +17,20 @@ django_asgi_app = get_asgi_application()
 # Import routing after Django is initialized
 from chat.routing import websocket_urlpatterns
 
+# Try to use JWT auth middleware, fallback to session auth
+try:
+    from chat.middleware import JWTAuthMiddlewareStack
+    websocket_auth = JWTAuthMiddlewareStack
+except ImportError:
+    # Fallback to session-based auth
+    websocket_auth = AuthMiddlewareStack
+
 application = ProtocolTypeRouter({
     # Django's ASGI application to handle traditional HTTP requests
     "http": django_asgi_app,
     
     # WebSocket handler
-    "websocket": AllowedHostsOriginValidator(
-        AuthMiddlewareStack(
-            URLRouter(websocket_urlpatterns)
-        )
+    "websocket": websocket_auth(
+        URLRouter(websocket_urlpatterns)
     ),
 })

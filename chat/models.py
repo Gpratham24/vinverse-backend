@@ -10,12 +10,13 @@ from django.utils import timezone
 class Room(models.Model):
     """
     Chat room model.
-    Can be: Global Lobby, Game-specific, or Team-specific.
+    Can be: Global Lobby, Game-specific, Team-specific, or Private.
     """
     ROOM_TYPES = [
         ('global', 'Global Lobby'),
         ('game', 'Game Channel'),
         ('team', 'Team Room'),
+        ('private', 'Private Room'),
     ]
     
     name = models.CharField(max_length=200, unique=True, help_text="Room name/slug")
@@ -31,6 +32,21 @@ class Room(models.Model):
         help_text="Team for team-specific rooms"
     )
     description = models.TextField(max_length=500, blank=True, null=True)
+    is_private = models.BooleanField(default=False, help_text="Private rooms require invitation")
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name='created_chat_rooms',
+        blank=True,
+        null=True,
+        help_text="User who created this room (for private rooms)"
+    )
+    members = models.ManyToManyField(
+        settings.AUTH_USER_MODEL,
+        related_name='chat_rooms',
+        blank=True,
+        help_text="Members of private rooms"
+    )
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
     

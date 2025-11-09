@@ -119,14 +119,25 @@ CELERY_TASK_TIME_LIMIT = 30 * 60  # 30 minutes
 ASGI_APPLICATION = 'vinverse.asgi.application'
 
 # Channel Layers (Redis for WebSocket support)
-CHANNEL_LAYERS = {
-    'default': {
-        'BACKEND': 'channels_redis.core.RedisChannelLayer',
-        'CONFIG': {
-            "hosts": [('127.0.0.1', 6379)],
+# Try Redis first, fallback to in-memory for development
+try:
+    import redis
+    redis.Redis(host='127.0.0.1', port=6379, db=0).ping()
+    CHANNEL_LAYERS = {
+        'default': {
+            'BACKEND': 'channels_redis.core.RedisChannelLayer',
+            'CONFIG': {
+                "hosts": [('127.0.0.1', 6379)],
+            },
         },
-    },
-}
+    }
+except (ImportError, redis.ConnectionError, Exception):
+    # Fallback to in-memory channel layer (for development only)
+    CHANNEL_LAYERS = {
+        'default': {
+            'BACKEND': 'channels.layers.InMemoryChannelLayer',
+        },
+    }
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',

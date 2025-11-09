@@ -15,19 +15,47 @@ class ChatConsumer(AsyncWebsocketConsumer):
     
     async def connect(self):
         """Handle WebSocket connection."""
-        self.room_name = self.scope['url_route']['kwargs']['room_name']
-        self.room_group_name = f'chat_{self.room_name}'
-        
-        # Join room group
-        await self.channel_layer.group_add(
-            self.room_group_name,
-            self.channel_name
-        )
-        
-        await self.accept()
-        
-        # Send room history
-        await self.send_room_history()
+        try:
+            user = self.scope.get('user')
+            
+            # Check if user is authenticated
+            if not user or not user.is_authenticated:
+                print(f"WebSocket connection rejected: User not authenticated. User: {user}")
+                await self.close(code=4001)  # Unauthorized
+                return
+            
+            self.room_name = self.scope['url_route']['kwargs']['room_name']
+            self.room_group_name = f'chat_{self.room_name}'
+            
+            # Check room access
+            room = await self.get_room(self.room_name)
+            if not room:
+                print(f"WebSocket connection rejected: Room '{self.room_name}' not found")
+                await self.close(code=4004)  # Room not found
+                return
+            
+            # Check if user can access private room
+            if room.is_private:
+                has_access = await self.check_room_access(room, user)
+                if not has_access:
+                    print(f"WebSocket connection rejected: User {user.username} doesn't have access to private room '{self.room_name}'")
+                    await self.close(code=4003)  # Forbidden
+                    return
+            
+            # Join room group
+            await self.channel_layer.group_add(
+                self.room_group_name,
+                self.channel_name
+            )
+            
+            await self.accept()
+            print(f"WebSocket connected: User {user.username} joined room '{self.room_name}'")
+            
+            # Send room history
+            await self.send_room_history()
+        except Exception as e:
+            print(f"WebSocket connection error: {e}")
+            await self.close(code=4000)  # Internal error
     
     async def disconnect(self, close_code):
         """Handle WebSocket disconnection."""
@@ -113,6 +141,13 @@ class ChatConsumer(AsyncWebsocketConsumer):
         )
     
     @database_sync_to_async
+    def check_room_access(self, room, user):
+        """Check if user has access to private room."""
+        if not room.is_private:
+            return True
+        return room.members.filter(id=user.id).exists() or room.created_by == user
+    
+    @database_sync_to_async
     def get_recent_messages(self, room, limit=50):
         """Get recent messages from room."""
         messages = Message.objects.filter(room=room).select_related('author').order_by('-created_at')[:limit]
@@ -120,6 +155,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             {
                 'id': msg.id,
                 'content': msg.content,
+                'message': msg.content,  # Also include as 'message' for compatibility
                 'username': msg.author.username,
                 'user_id': msg.author.id,
                 'timestamp': msg.created_at.isoformat(),

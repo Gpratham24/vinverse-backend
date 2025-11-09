@@ -492,3 +492,209 @@ class MatchInsightViewSet(viewsets.ReadOnlyModelViewSet):
         return MatchInsight.objects.filter(
             user=self.request.user
         ).select_related('tournament', 'user').order_by('-generated_at')
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def smart_matchmaking(request):
+    """
+    Smart matchmaking algorithm.
+    Matches players based on: Elo rating, win rate, team synergy, region, game.
+    POST /api/gamerlink/matchmaking/
+    Body: { "game": "Valorant", "region": "NA", "team_size": 5 }
+    """
+    from tournaments.models import Tournament
+    from ai_engine.tasks import calculate_win_rate, calculate_skill_consistency
+    
+    game = request.data.get('game')
+    region = request.data.get('region', '')
+    team_size = int(request.data.get('team_size', 5))
+    user = request.user
+    
+    if not game:
+        return Response(
+            {'error': 'game is required'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    # Get user's stats
+    user_win_rate = calculate_win_rate(user, game)
+    user_consistency = calculate_skill_consistency(user, game)
+    
+    # Calculate user's Elo-like score
+    user_elo = (user_win_rate * 1000) + (user_consistency * 500) + (user.xp_points / 10)
+    
+    # Find potential teammates
+    # Exclude users already in teams with user, and user themselves
+    excluded_users = {user.id}
+    user_teams = Team.objects.filter(members=user, game=game)
+    for team in user_teams:
+        excluded_users.update(team.members.values_list('id', flat=True))
+    
+    # Get LFT posts or active users for this game
+    potential_teammates = CustomUser.objects.exclude(id__in=excluded_users).filter(
+        joined_tournaments__tournament__game=game
+    ).distinct()
+    
+    if region:
+        # Filter by region if LFT posts have region info
+        lft_with_region = LFTPost.objects.filter(
+            game__icontains=game,
+            region__icontains=region,
+            is_active=True
+        ).values_list('author_id', flat=True)
+        potential_teammates = potential_teammates.filter(id__in=lft_with_region)
+    
+    matches = []
+    for teammate in potential_teammates[:100]:  # Limit for performance
+        teammate_win_rate = calculate_win_rate(teammate, game)
+        teammate_consistency = calculate_skill_consistency(teammate, game)
+        teammate_elo = (teammate_win_rate * 1000) + (teammate_consistency * 500) + (teammate.xp_points / 10)
+        
+        # Calculate match score
+        elo_diff = abs(user_elo - teammate_elo)
+        elo_score = max(0, 1 - (elo_diff / 2000))  # Closer Elo = higher score
+        
+        # Region match bonus (check LFT posts for region info)
+        region_score = 0.1
+        if region:
+            teammate_lft = LFTPost.objects.filter(author=teammate, game__icontains=game, is_active=True).first()
+            if teammate_lft and teammate_lft.region and region.lower() in teammate_lft.region.lower():
+                region_score = 0.3
+        
+        # Team synergy (if they've been in tournaments together)
+        synergy_score = 0
+        user_tournament_ids = Tournament.objects.filter(
+            participants__user=user,
+            game=game
+        ).values_list('id', flat=True)
+        common_tournaments = Tournament.objects.filter(
+            id__in=user_tournament_ids,
+            participants__user=teammate,
+            game=game
+        ).count()
+        if common_tournaments > 0:
+            synergy_score = min(0.3, common_tournaments * 0.1)
+        
+        # Rank similarity
+        rank_score = 0.1
+        if user.rank and teammate.rank:
+            if user.rank.lower() == teammate.rank.lower():
+                rank_score = 0.2
+        
+        total_score = (elo_score * 0.4 + region_score * 0.2 + synergy_score * 0.3 + rank_score * 0.1)
+        
+        # Get teammate region from LFT post if available
+        teammate_lft_for_region = LFTPost.objects.filter(author=teammate, game__icontains=game, is_active=True).first()
+        teammate_region = teammate_lft_for_region.region if teammate_lft_for_region else ''
+        
+        matches.append({
+            'user': {
+                'id': teammate.id,
+                'username': teammate.username,
+                'gamer_tag': teammate.gamer_tag,
+                'rank': teammate.rank,
+                'region': teammate_region,
+            },
+            'match_score': round(total_score * 100, 2),
+            'elo_score': round(elo_score * 100, 2),
+            'region_match': region_score > 0.1,
+            'synergy': common_tournaments,
+            'win_rate': round(teammate_win_rate * 100, 2),
+            'consistency': round(teammate_consistency * 100, 2),
+        })
+    
+    # Sort by match score
+    matches.sort(key=lambda x: x['match_score'], reverse=True)
+    
+    return Response({
+        'matches': matches[:team_size * 2],  # Return 2x team size for options
+        'user_stats': {
+            'elo': round(user_elo, 2),
+            'win_rate': round(user_win_rate * 100, 2),
+            'consistency': round(user_consistency * 100, 2),
+        }
+    })
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def leaderboard(request):
+    """
+    Get leaderboard with rankings.
+    GET /api/gamerlink/leaderboard/?game=Valorant&type=overall|tournaments|xp
+    """
+    from django.db.models import F, Count
+    
+    leaderboard_type = request.query_params.get('type', 'overall')
+    game = request.query_params.get('game', None)
+    limit = int(request.query_params.get('limit', 100))
+    
+    if leaderboard_type == 'xp':
+        # XP-based leaderboard
+        queryset = CustomUser.objects.all().order_by('-xp_points')
+    elif leaderboard_type == 'tournaments':
+        # Tournament participation leaderboard
+        from tournaments.models import TournamentParticipant
+        queryset = CustomUser.objects.annotate(
+            tournament_count=Count('joined_tournaments')
+        ).order_by('-tournament_count')
+    else:
+        # Overall (combined score)
+        from tournaments.models import TournamentParticipant
+        queryset = CustomUser.objects.annotate(
+            tournament_count=Count('joined_tournaments'),
+            combined_score=F('xp_points') + (F('tournament_count') * 100)
+        ).order_by('-combined_score')
+    
+    # Filter by game if specified
+    if game:
+        queryset = queryset.filter(
+            joined_tournaments__tournament__game=game
+        ).distinct()
+    
+    # Get top users
+    top_users = list(queryset[:limit])
+    
+    leaderboard_data = []
+    for idx, user in enumerate(top_users, start=1):
+        from ai_engine.tasks import calculate_win_rate, calculate_skill_consistency
+        win_rate = calculate_win_rate(user, game) if game else calculate_win_rate(user)
+        
+        # Determine tier/badge
+        tier = 'Bronze'
+        if user.xp_points >= 10000:
+            tier = 'Challenger'
+        elif user.xp_points >= 7500:
+            tier = 'Grandmaster'
+        elif user.xp_points >= 5000:
+            tier = 'Master'
+        elif user.xp_points >= 3000:
+            tier = 'Diamond'
+        elif user.xp_points >= 2000:
+            tier = 'Platinum'
+        elif user.xp_points >= 1000:
+            tier = 'Gold'
+        elif user.xp_points >= 500:
+            tier = 'Silver'
+        
+        leaderboard_data.append({
+            'rank': idx,
+            'user': {
+                'id': user.id,
+                'username': user.username,
+                'gamer_tag': user.gamer_tag,
+                'rank': user.rank,
+                'xp_points': user.xp_points,
+            },
+            'tier': tier,
+            'win_rate': round(win_rate * 100, 2),
+            'tournaments': getattr(user, 'tournament_count', 0),
+            'score': getattr(user, 'combined_score', user.xp_points),
+        })
+    
+    return Response({
+        'leaderboard': leaderboard_data,
+        'type': leaderboard_type,
+        'game': game,
+    })

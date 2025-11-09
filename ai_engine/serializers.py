@@ -11,21 +11,17 @@ import json
 class MatchInsightSerializer(serializers.ModelSerializer):
     """Serializer for MatchInsight model."""
     tournament = TournamentSerializer(read_only=True)
-    ai_summary_parsed = serializers.SerializerMethodField()
+    user_username = serializers.CharField(source='user.username', read_only=True)
+    user_gamer_tag = serializers.CharField(source='user.gamer_tag', read_only=True)
     
     class Meta:
         model = MatchInsight
-        fields = ['id', 'user', 'tournament', 'ai_summary', 'ai_summary_parsed', 'status', 'error_message', 'created_at']
-        read_only_fields = ['id', 'user', 'created_at']
-    
-    def get_ai_summary_parsed(self, obj):
-        """Parse AI summary JSON."""
-        if obj.ai_summary:
-            try:
-                return json.loads(obj.ai_summary)
-            except json.JSONDecodeError:
-                return {'raw': obj.ai_summary}
-        return None
+        fields = [
+            'id', 'user', 'user_username', 'user_gamer_tag', 'tournament', 
+            'summary', 'strengths', 'improvements', 'score', 
+            'generated_at', 'ai_model'
+        ]
+        read_only_fields = ['id', 'user', 'generated_at']
 
 
 class AIProcessingJobSerializer(serializers.ModelSerializer):

@@ -31,6 +31,11 @@ class RoomViewSet(viewsets.ModelViewSet):
         if game:
             queryset = queryset.filter(game__icontains=game)
         
+        # Filter by public/private
+        is_private = self.request.query_params.get('is_private', None)
+        if is_private is not None:
+            queryset = queryset.filter(is_private=is_private.lower() == 'true')
+        
         # For team rooms, only show if user is a member
         team_rooms = queryset.filter(room_type='team')
         accessible_team_rooms = []
@@ -38,10 +43,23 @@ class RoomViewSet(viewsets.ModelViewSet):
             if room.team and user in room.team.members.all():
                 accessible_team_rooms.append(room.id)
         
-        # Combine global/game rooms with accessible team rooms
+        # For private rooms, only show if user is a member or creator
+        private_rooms = queryset.filter(room_type='private', is_private=True)
+        accessible_private_rooms = []
+        for room in private_rooms:
+            if user in room.members.all() or room.created_by == user:
+                accessible_private_rooms.append(room.id)
+        
+        # Combine public rooms with accessible team/private rooms
         return queryset.filter(
-            Q(room_type__in=['global', 'game']) | Q(id__in=accessible_team_rooms)
+            Q(room_type__in=['global', 'game'], is_private=False) |
+            Q(id__in=accessible_team_rooms) |
+            Q(id__in=accessible_private_rooms)
         ).order_by('room_type', 'display_name')
+    
+    def perform_create(self, serializer):
+        """Set created_by when creating a room."""
+        serializer.save(created_by=self.request.user)
     
     @action(detail=False, methods=['get'])
     def default_rooms(self, request):
