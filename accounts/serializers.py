@@ -3,7 +3,7 @@ Serializers for user authentication and profile management.
 """
 from rest_framework import serializers
 from django.contrib.auth.password_validation import validate_password
-from .models import CustomUser
+from .models import CustomUser, Badge, UserBadge
 
 
 class UserRegistrationSerializer(serializers.ModelSerializer):
@@ -47,14 +47,36 @@ class UserRegistrationSerializer(serializers.ModelSerializer):
         return user
 
 
+class BadgeSerializer(serializers.ModelSerializer):
+    """Serializer for badge information."""
+    class Meta:
+        model = Badge
+        fields = ('id', 'key', 'name', 'description', 'icon', 'badge_type', 'color')
+
+
+class UserBadgeSerializer(serializers.ModelSerializer):
+    """Serializer for user badges with badge details."""
+    badge = BadgeSerializer(read_only=True)
+    
+    class Meta:
+        model = UserBadge
+        fields = ('id', 'badge', 'earned_at')
+
+
 class UserProfileSerializer(serializers.ModelSerializer):
     """
     Serializer for user profile (read/write user data).
     """
     verified = serializers.BooleanField(read_only=True)  # Only admins can update via admin panel
+    badges = serializers.SerializerMethodField()
     
     class Meta:
         model = CustomUser
-        fields = ('id', 'username', 'email', 'bio', 'rank', 'gamer_tag', 'verified', 'vin_id', 'xp_points', 'is_online', 'last_seen', 'date_joined')
-        read_only_fields = ('id', 'username', 'date_joined', 'vin_id', 'verified', 'xp_points', 'is_online', 'last_seen')
+        fields = ('id', 'username', 'email', 'bio', 'rank', 'gamer_tag', 'verified', 'vin_id', 'xp_points', 'is_online', 'last_seen', 'date_joined', 'streak_days', 'last_active_date', 'badges')
+        read_only_fields = ('id', 'username', 'date_joined', 'vin_id', 'verified', 'xp_points', 'is_online', 'last_seen', 'streak_days', 'last_active_date', 'badges')
+    
+    def get_badges(self, obj):
+        """Get user's earned badges."""
+        user_badges = UserBadge.objects.filter(user=obj).select_related('badge')
+        return UserBadgeSerializer(user_badges, many=True).data
 

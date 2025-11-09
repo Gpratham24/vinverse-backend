@@ -7,8 +7,9 @@ from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
 from django.db import models
-from .models import CustomUser
+from .models import CustomUser, Badge, UserBadge
 from .serializers import UserRegistrationSerializer, UserProfileSerializer
+from .badges import update_user_activity, check_badge_eligibility
 
 
 @api_view(['POST'])
@@ -74,7 +75,21 @@ def login_user(request):
         
         if user:
             try:
+                # Update user activity and streak
+                update_user_activity(user)
+                
+                # Check and award badges
+                eligible_badges = check_badge_eligibility(user)
+                for badge_key in eligible_badges:
+                    try:
+                        badge = Badge.objects.get(key=badge_key)
+                        UserBadge.objects.get_or_create(user=user, badge=badge)
+                    except Badge.DoesNotExist:
+                        pass  # Badge not defined yet
+                
                 refresh = RefreshToken.for_user(user)
+                # Refresh user data after activity update
+                user.refresh_from_db()
                 serializer = UserProfileSerializer(user)
                 return Response({
                     'user': serializer.data,
@@ -200,8 +215,20 @@ class UserProfileView(generics.RetrieveUpdateAPIView):
             # Viewing another user's profile (public read access)
             from django.shortcuts import get_object_or_404
             return get_object_or_404(CustomUser, id=user_id)
-        # Viewing own profile
-        return self.request.user
+        # Viewing own profile - update activity
+        user = self.request.user
+        if user.is_authenticated:
+            update_user_activity(user)
+            # Check and award badges
+            eligible_badges = check_badge_eligibility(user)
+            for badge_key in eligible_badges:
+                try:
+                    badge = Badge.objects.get(key=badge_key)
+                    UserBadge.objects.get_or_create(user=user, badge=badge)
+                except Badge.DoesNotExist:
+                    pass
+            user.refresh_from_db()
+        return user
     
     def get_permissions(self):
         """Allow public read access for viewing other users' profiles."""

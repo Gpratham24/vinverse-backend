@@ -3,6 +3,7 @@ Custom User model extending AbstractUser for esports profiles.
 """
 from django.contrib.auth.models import AbstractUser
 from django.db import models
+from django.conf import settings
 
 
 class CustomUser(AbstractUser):
@@ -24,6 +25,8 @@ class CustomUser(AbstractUser):
     xp_points = models.IntegerField(default=0, help_text="XP points for gamification")
     is_online = models.BooleanField(default=False, help_text="Online status")
     last_seen = models.DateTimeField(auto_now=True, help_text="Last seen timestamp")
+    streak_days = models.IntegerField(default=0, help_text="Current login streak in days")
+    last_active_date = models.DateField(null=True, blank=True, help_text="Last date user was active")
     
     class Meta:
         db_table = 'custom_user'
@@ -64,4 +67,62 @@ class CustomUser(AbstractUser):
             self.vin_id = f"VIN-{next_number:07d}"
         
         super().save(*args, **kwargs)
+
+
+class Badge(models.Model):
+    """
+    Badge/Achievement definitions.
+    """
+    BADGE_TYPES = [
+        ('streak', 'Login Streak'),
+        ('tournament', 'Tournament'),
+        ('social', 'Social'),
+        ('achievement', 'Achievement'),
+    ]
+    
+    key = models.CharField(max_length=50, unique=True, help_text="Unique badge identifier")
+    name = models.CharField(max_length=100, help_text="Badge display name")
+    description = models.TextField(help_text="Badge description")
+    icon = models.CharField(max_length=10, default='🏆', help_text="Badge icon/emoji")
+    badge_type = models.CharField(max_length=20, choices=BADGE_TYPES, default='achievement')
+    color = models.CharField(max_length=20, default='purple', help_text="Badge color theme")
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        db_table = 'badge'
+        ordering = ['badge_type', 'name']
+        verbose_name = 'Badge'
+        verbose_name_plural = 'Badges'
+    
+    def __str__(self):
+        return f"{self.icon} {self.name}"
+
+
+class UserBadge(models.Model):
+    """
+    Tracks which badges users have earned.
+    """
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='earned_badges',
+        help_text="User who earned the badge"
+    )
+    badge = models.ForeignKey(
+        Badge,
+        on_delete=models.CASCADE,
+        related_name='user_badges',
+        help_text="Badge that was earned"
+    )
+    earned_at = models.DateTimeField(auto_now_add=True, help_text="When the badge was earned")
+    
+    class Meta:
+        db_table = 'user_badge'
+        ordering = ['-earned_at']
+        unique_together = ['user', 'badge']  # User can only earn each badge once
+        verbose_name = 'User Badge'
+        verbose_name_plural = 'User Badges'
+    
+    def __str__(self):
+        return f"{self.user.username} - {self.badge.name}"
 
